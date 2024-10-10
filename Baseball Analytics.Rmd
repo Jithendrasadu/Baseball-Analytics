@@ -1,0 +1,759 @@
+---
+title: "MLB Pitchers EDA"
+author: "Jithendra Sadu"
+date: "2023-11-02"
+output: pdf_document
+---
+# Question of Interest
+What factors under a pitcher’s control contribute to their home run rate?
+# Significance of the Question
+In baseball, pitchers need to allow as few home runs as possible. Thus, limiting the amount of home runs is crucial. What factors influence a pitcher’s home run rate?
+
+```{r }
+library(olsrr)
+library(tidyverse)
+library(dbplyr)
+library(dplyr)
+library(Matrix)
+library(MASS)
+library(ggplot2)
+library(tibble)
+library(corrplot)
+library(data.table)
+library(caret)
+
+#library(ggmosaic)
+#library(ggforce)
+#library(ggmap)
+#library(purrr)
+# library(keep)
+# library(readr)
+# library(gridExtra)
+
+
+```
+
+```{r }
+setwd("E:/American University/FALL-23/STAT 615/project 1")
+# Data Import
+raw1 <- read_csv("pitcherhomers1.csv")
+raw2 <- read_csv("swingstats.csv")
+final_data <- merge(raw1, raw2, by = "player_id")
+# Creating custom variables
+final_data <- final_data %>%
+  mutate(HR_rate = (home_run / pa) * 100)
+final_data <- final_data %>%
+  mutate(zone_swing_ratio = z_swing_percent / oz_swing_percent)
+
+
+
+# Glimpse the dataset
+glimpse(final_data)
+```
+
+
+
+
+```{r }
+# Home Run Rate Summary & Histogram
+summary(final_data$HR_rate)
+ggplot(final_data, aes(x = HR_rate)) +
+  geom_histogram(bins = 20, fill = 'red') +
+  theme_bw() +
+  labs(title = "Home Run Rate for MLB Pitchers",
+       subtitle = "Minimum 200 batters faced, 2023 season") +
+  xlab("Home Run %") +
+  ylab("# of Pitchers")
+```
+
+
+## Exploratory Data Analysis
+
+### Home Run Rate
+
+The home run rate distribution provides insights into the performance of MLB pitchers.
+
+
+```{r home_run_rate_boxplot, fig.cap="Home Run Rate Boxplot"}
+# Home Run Rate Boxplot
+ggplot(final_data, aes(x = HR_rate)) +
+  geom_boxplot(color = 'navyblue') +
+  theme_bw() +
+  labs(title = "Home Run Rate for MLB Pitchers",
+       subtitle = "Minimum 200 batters faced, 2023 season") +
+  xlab("Home Run Rate") +
+  coord_flip() 
+
+# Find and print the outliers
+outliers <- boxplot(final_data$HR_rate)$out
+
+# Remove the identified outliers
+final_data <- final_data[!final_data$HR_rate %in% outliers, ]
+
+# Check the updated dataset
+head(final_data)
+
+```
+
+```{r }
+# Home Run Rate Summary & Histogram of cleaned dataset
+summary(final_data$HR_rate)
+ggplot(final_data, aes(x = HR_rate)) +
+  geom_histogram(bins = 20, fill = 'red') +
+  theme_bw() +
+  labs(title = "Home Run Rate for MLB Pitchers",
+       subtitle = "Minimum 200 batters faced, 2023 season") +
+  xlab("Home Run %") +
+  ylab("# of Pitchers")
+
+
+# Home Run Rate Boxplot of cleaned dataset
+ggplot(final_data, aes(x = HR_rate)) +
+  geom_boxplot(color = 'navyblue') +
+  theme_bw() +
+  labs(title = "Home Run Rate for MLB Pitchers",
+       subtitle = "Minimum 200 batters faced, 2023 season") +
+  xlab("Home Run Rate") +
+  coord_flip() 
+```
+
+
+# Exploratory Data Analysis
+
+## Summary Statistics for All Variables
+
+```{r}
+summary(final_data$HR_rate)
+```
+
+
+### Total Number of Batters Faced
+This is a counting statistic.
+
+```{r total_batters_summary}
+summary(final_data$pa)
+```
+## Number of Home Runs Allowed
+
+```{r}
+summary(final_data$home_run)
+```
+## Average Exit Velocity Allowed on Contact
+Mean exit velocity allowed for each player during his season.
+
+
+```{r}
+summary(final_data$exit_velocity_avg)
+
+```
+## Average Launch Angle Allowed on Contact
+Mean launch angle (how high a ball is hit) for each player during his season.
+
+
+```{r}
+summary(final_data$launch_angle_avg)
+
+```
+## Barrel Rate
+For each player: the percentage of balls in play that he allows to be hit at the optimal speed and angle for a hit.
+
+
+```{r}
+summary(final_data$barrel_batted_rate)
+
+```
+## Hard Hit Rate
+For each player: the percentage of balls in play that he allows are greater than or equal to 95 miles per hour.
+
+
+```{r}
+summary(final_data$hard_hit_percent)
+
+```
+## "Meatball" Rate
+For each player: the percentage of pitches he throws to the middle of the strike zone, where it is typically easier for batters to make better contact.
+
+
+```{r}
+summary(final_data$meatball_percent)
+
+```
+## "Edge" Rate
+For each player: the percentage of pitches he throws to the edge, or "shadow," of the strike zone, where it is typically harder for batters to make better contact.
+
+
+```{r}
+summary(final_data$edge_percent)
+
+```
+## Swing Decision Ratio
+For each pitcher: the rate at which batters swing at pitches in the strike zone (harder to hit) versus the rate at which batters swing at pitches out of the strike zone (easier to hit).
+
+```{r}
+summary(final_data$zone_swing_ratio)
+
+```
+
+## Variable Relationship 
+
+```{r}
+cor_matrix <- cor(final_data[, c( "HR_rate","barrel_batted_rate","launch_angle_avg","pa",  "exit_velocity_avg", "z_swing_percent","oz_contact_percent","hard_hit_percent","z_swing_miss_percent", "meatball_percent", "edge_percent","zone_swing_ratio" , "oz_swing_percent")])
+corrplot(cor_matrix, method = "circle", title = "Correlation Matrix", title.cex = 0.8, tl.cex = 0.7)
+
+```
+
+
+
+```{r}
+moddeell <- lm(HR_rate ~ . -player_id - year, data = final_data)
+summary(moddeell)
+# Do any variables have a variance inflation factor of over 9?
+
+car::vif(moddeell)
+
+```
+```{r}
+
+# let us remove zone swing ratio and try
+
+reduced_model <- lm(HR_rate ~ . -player_id - year -zone_swing_ratio- oz_swing_percent , data = final_data)
+summary(reduced_model)
+car::vif(reduced_model)
+
+```
+
+```{r}
+
+reduced_model2 <- lm(HR_rate ~ . -player_id - year - oz_swing_percent , data = final_data)
+summary(reduced_model2)
+car::vif(reduced_model2)
+
+```
+
+
+
+```{r}
+
+final_model_reduced <- lm(HR_rate ~ . -player_id - year -zone_swing_ratio , data = final_data)
+summary(final_model_reduced)
+car::vif(final_model_reduced)
+```
+
+
+
+
+```{r}
+# Extract standardized residuals
+standardized_residuals <- rstandard(final_model_reduced)
+# Create QQ plot with quantile lines and point labels
+qqnorm(standardized_residuals, main = "QQ Plot of Standardized Residuals")
+qqline(standardized_residuals, col = 2)
+
+
+
+```
+
+```{r}
+# Apply logarithmic transformation
+final_data$HR_rate_log <- log(final_data$HR_rate)
+
+# Fit linear regression with transformed response variable
+log_model <- lm(HR_rate_log ~ . - player_id - year - zone_swing_ratio, data = final_data)
+
+# Extract standardized residuals
+log_residuals <- residuals(log_model) / sd(residuals(log_model))
+
+# Create QQ plot with quantile lines
+qqnorm(log_residuals, main = "QQ Plot of Log-Transformed Standardized Residuals")
+qqline(log_residuals, col = 2)
+
+
+```
+
+```{r}
+# Assuming you have your final_data with the response variable (HR_rate) and predictors
+
+# Split the data into training and testing sets
+set.seed(123)  # for reproducibility
+train_indices <- sample(1:nrow(final_data), 0.7 * nrow(final_data))
+train_data <- final_data[train_indices, ]
+test_data <- final_data[-train_indices, ]
+
+# Train the Random Forest model
+library(randomForest)
+rf_model <- randomForest(HR_rate ~ . - player_id - year - zone_swing_ratio, data = train_data)
+
+plot(rf_model)
+```
+
+
+```{r}
+# Make predictions
+train_predictions <- predict(rf_model, train_data)
+test_predictions <- predict(rf_model, test_data)
+
+# Compare predictions with actual values
+train_residuals <- train_predictions - train_data$HR_rate
+test_residuals <- test_predictions - test_data$HR_rate
+
+# Analyze residuals
+plot(train_residuals, col = "blue", main = "Residuals on Training Set")
+abline(h = 0, col = "red", lty = 2)
+
+plot(test_residuals, col = "green", main = "Residuals on Testing Set")
+abline(h = 0, col = "red", lty = 2)
+
+```
+
+```{r}
+
+# Using caret package for cross-validation
+library(caret)
+ctrl <- trainControl(method = "cv", number = 5)  # 5-fold cross-validation
+cv_model <- train(HR_rate ~ . - player_id - year - zone_swing_ratio, data = train_data, method = "rf", trControl = ctrl)
+cv_model
+
+```
+
+
+```{r}
+
+# Make predictions using the trained Random Forest model
+predictions <- predict(rf_model, newdata = test_data)
+
+# Evaluate the model performance
+library(Metrics)  
+
+rmse_value <- rmse(predictions, test_data$HR_rate)
+r_squared_value <- R2(predictions, test_data$HR_rate)
+mae_value <- mae(predictions, test_data$HR_rate)
+
+# Print or use the evaluation metrics 
+cat("RMSE:", rmse_value, "\n")
+cat("R-squared:", r_squared_value, "\n")
+cat("MAE:", mae_value, "\n")
+```
+
+
+
+
+```{r}
+library(randomForest)
+
+# Train the Random Forest model with 95 trees
+rf_model_full <- randomForest(HR_rate ~ . - player_id - year - zone_swing_ratio, data = final_data, ntree = 500)
+
+
+# Assuming 'rf_model' is your trained Random Forest model
+
+# 1. Variable Importance
+var_importance <- importance(rf_model)
+print(var_importance)
+
+# 2. Coefficient Sign and Magnitude
+# Random Forest doesn't have traditional coefficients, so you may skip this for RF
+
+# 3. Domain Knowledge (manual inspection of influential predictors)
+# Examine the variable importance plot generated by the model
+varImpPlot(rf_model)
+
+# 4. Practical Significance
+# Interpret the results based on your domain knowledge and the variable importance plot
+
+# Example interpretation for pa and barrel_batted_rate
+if ("pa" %in% rownames(var_importance) && "barrel_batted_rate" %in% rownames(var_importance)) {
+  if (var_importance["pa",] > var_importance["barrel_batted_rate",]) {
+    cat("According to the Random Forest model, the number of plate appearances (pa) is the most significant factor influencing a pitcher's home run rate.\n")
+  } else {
+    cat("According to the Random Forest model, the rate of barreled balls (barrel_batted_rate) is the most significant factor influencing a pitcher's home run rate.\n")
+  }
+}
+
+
+```
+
+
+
+
+# Model 1: Pitch Quality Influence
+```{r}
+model1 <- lm(HR_rate ~ exit_velocity_avg, data = final_data)
+summary(model1)
+
+# Scatter plot for exit velocity vs. home run rate
+# This scatter plot visualizes the relationship between the average exit velocity and the home run rate.
+
+ggplot(final_data, aes(x = exit_velocity_avg, y = HR_rate)) +
+  geom_point() +
+  labs(title = "Exit Velocity vs. Home Run Rate",
+       x = "Exit Velocity Average",
+       y = "Home Run Rate")+
+  geom_smooth(method = lm, se=F)
+
+```
+HR_rate=−21.21082+0.27322*exit_velocity_avg
+
+The model suggests that there is a statistically significant relationship between exit velocity and HR_rate. However, the R-squared value indicates that only a small proportion of the variability in HR_rate is explained by exit velocity alone. Other factors not included in this model may also influence HR_rate.
+
+
+# Model 2: Batting Contact Metrics
+```{r}
+model2 <- lm(HR_rate ~ barrel_batted_rate, data = final_data)
+summary(model2)
+
+
+ggplot(final_data, aes(
+  x = barrel_batted_rate,
+  y = HR_rate)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Barrel Rate vs. Pitcher Home Run Rate",
+       subtitle = "2023 Regular Season, minimum 200 batters faced") +
+  xlab('"Barrel" Rate') +
+  ylab("Home Run Percentage") +
+  geom_smooth(method = "lm", se = FALSE) +
+  theme(legend.position = "none")
+
+```
+HR_rate=0.09800+0.37788×barrel_batted_rate
+
+This model suggests that there is a statistically significant and strong positive relationship between barrel batted rate and HR_rate. The R-squared value indicates that a substantial proportion of the variability in HR_rate is explained by barrel batted rate.
+
+
+
+# Model 3: Pitch Location Metrics
+```{r}
+model3 <- lm(HR_rate ~ edge_percent, data = final_data)
+summary(model3)
+
+ggplot(final_data, aes(
+  x = edge_percent,
+  y = HR_rate)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Edge Percent vs. Pitcher Home Run Rate",
+       subtitle = "2023 Regular Season, minimum 200 batters faced") +
+  xlab("Edge percent") +
+  ylab("Home Run Percentage") +
+  geom_smooth(method = "lm", se = FALSE) +
+  theme(legend.position = "none")
+```
+HR_rate=0.78031+0.05338×edge_percent
+
+The model suggests that there is a statistically significant but weak positive relationship between edge percent and HR_rate. However, the R-squared value indicates that only a small proportion of the variability in HR_rate is explained by edge percent.
+
+
+# Model 4: Overall Influence
+```{r}
+model4 <- lm(HR_rate ~ exit_velocity_avg + edge_percent + barrel_batted_rate, data = final_data)
+summary(model4)
+```
+HR_rate=−7.07052+0.04401×exit_velocity_avg+0.07813×edge_percent+0.36900×barrel_batted_rate
+
+It appears that exit_velocity_avg does not contribute significantly to the model in predicting HR_rate when edge_percent and barrel_batted_rate are considered.
+
+
+
+```{r}
+meat <- lm(data = final_data, HR_rate ~meatball_percent)
+summary(meat)
+
+ggplot(final_data, aes(
+  x = meatball_percent,
+  y = HR_rate)) +
+  geom_point() +
+  theme_bw() +
+  labs(title = "Meatball Percent vs. Pitcher Home Run Rate",
+       subtitle = "2023 Regular Season, minimum 200 batters faced") +
+  xlab("Meatball percent") +
+  ylab("Home Run Percentage") +
+  geom_smooth(method = "lm", se = FALSE) +
+  theme(legend.position = "none")
+```
+
+## LASSO regression
+
+```{r}
+# Load necessary library
+library(glmnet)
+
+# Extract predictors and response
+X <- as.matrix(final_data[, !names(final_data) %in% c("player_id", "year", "HR_rate")])
+y <- final_data$HR_rate
+
+# Fit Lasso regression model
+lasso_model <- cv.glmnet(X, y, alpha = 1)  # alpha = 1 for Lasso
+
+# Display results
+print(lasso_model)
+
+# Plot the cross-validated mean squared error (MSE) against log(lambda)
+plot(lasso_model)
+
+```
+
+
+```{r}
+# Extract coefficients
+coefficients(lasso_model)
+
+# Assuming your data is stored in a dataframe named 'final_data'
+X_train <- as.matrix(final_data[, !names(final_data) %in% c("player_id", "year", "HR_rate")])
+y_train <- final_data$HR_rate
+
+# Predict on the training set
+predictions_train <- predict(lasso_model, newx = X_train)
+
+# Evaluate performance on training set
+mse_train <- mean((predictions_train - y_train)^2)
+rmse_train <- sqrt(mse_train)
+
+# Print evaluation metrics
+cat("Mean Squared Error (MSE):", mse_train, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse_train, "\n")
+
+```
+
+
+## Random forest
+
+```{r}
+
+# Load the randomForest library
+library(randomForest)
+
+# Split the data into training and test sets
+set.seed(123)  # Set seed for reproducibility
+train_indices <- sample(1:nrow(final_data), 0.8 * nrow(final_data))
+train_data <- final_data[train_indices, ]
+test_data <- final_data[-train_indices, ]
+
+# Create the random forest model
+rf_model <- randomForest(HR_rate ~ ., data = train_data)
+
+# Make predictions on the test set
+predictions <- predict(rf_model, newdata = test_data)
+
+# Evaluate the model
+mse <- mean((test_data$HR_rate - predictions)^2)
+rmse <- sqrt(mse)
+
+# Print evaluation metrics
+cat("Mean Squared Error (MSE):", mse, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse, "\n")
+
+# Display feature importance
+importance(rf_model)
+
+```
+
+```{r}
+# Remove specified variables
+selected_data <- final_data[, !names(final_data) %in% c("year", "oz_swing_percent", "zone_swing_ratio")]
+
+# Create new predictor matrix X and response vector y
+X <- as.matrix(selected_data[, !names(selected_data) %in% c("player_id", "HR_rate")])
+y <- selected_data$HR_rate
+
+# Create a new random forest model
+rf_model_updated <- randomForest(HR_rate ~ ., data = selected_data)
+
+# Make predictions on the test set
+predictions_updated <- predict(rf_model_updated, newdata = test_data)
+
+# Evaluate the updated model
+mse_updated <- mean((test_data$HR_rate - predictions_updated)^2)
+rmse_updated <- sqrt(mse_updated)
+
+# Display the updated evaluation metrics
+cat("Updated Mean Squared Error (MSE):", mse_updated, "\n")
+cat("Updated Root Mean Squared Error (RMSE):", rmse_updated, "\n")
+
+# Display updated feature importance
+importance(rf_model_updated)
+
+```
+
+The updated model (second model) shows a significant improvement in both MSE and RMSE compared to the first model.
+After removing the variables "year," "oz_swing_percent," and "zone_swing_ratio," the model's performance improved, indicating that these variables might not have contributed significantly to predicting the home run rate.
+The feature importance values in the second model are generally higher for most variables, suggesting that the remaining variables are more influential in predicting the target variable.
+The improved model suggests that the selected variables play a more crucial role in predicting the home run rate. If you have any specific questions or further analyses you'd like to perform, feel free to let me know!
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(corrplot)
+
+# Scatter plot for z_swing_percent vs. home run rate
+ggplot(final_data, aes(x = z_swing_percent, y = HR_rate)) +
+  geom_point() +
+  labs(title = "Relationship between Z-Swing Percentage and Home Run Rate",
+       x = "Z-Swing Percentage",
+       y = "Home Run Rate")
+
+# Scatter plot for oz_swing_percent vs. home run rate
+ggplot(final_data, aes(x = oz_swing_percent, y = HR_rate)) +
+  geom_point() +
+  labs(title = "Relationship between OZ-Swing Percentage and Home Run Rate",
+       x = "OZ-Swing Percentage",
+       y = "Home Run Rate")
+
+# Calculate correlation matrix
+cor_matrix <- cor(final_data[, c("z_swing_percent", "oz_swing_percent", "HR_rate")])
+
+# Visualize correlation matrix
+corrplot(cor_matrix, method = "circle")
+
+# Fit a linear regression model
+model <- lm(HR_rate ~ z_swing_percent + oz_swing_percent, data = final_data)
+
+# Display the summary of the regression model
+summary(model)
+
+```
+
+
+
+```{r}
+# Set seed for reproducibility
+set.seed(123)
+
+# Load the caret package
+library(caret)
+
+# Create an index for data partitioning
+index <- createDataPartition(final_data$HR_rate, p = 0.8, list = FALSE)
+
+# Create training and testing sets
+train_data <- final_data[index, ]
+test_data <- final_data[-index, ]
+```
+
+```{r}
+
+# Fit a linear regression model
+model11 <- lm(HR_rate ~ exit_velocity_avg + barrel_batted_rate + edge_percent + hard_hit_percent, data = train_data)
+
+summary(model11)
+
+# Make predictions on the test set
+predictions <- predict(model11, newdata = test_data)
+
+# Evaluate the model
+mse <- mean((test_data$HR_rate - predictions)^2)
+rmse <- sqrt(mse)
+rsquared <- 1 - (sum((test_data$HR_rate - predictions)^2) / sum((test_data$HR_rate - mean(test_data$HR_rate))^2))
+
+# Print evaluation metrics
+cat("Mean Squared Error (MSE):", mse, "\n")
+cat("Root Mean Squared Error (RMSE):", rmse, "\n")
+cat("R-squared:", rsquared, "\n")
+
+```
+
+
+```{r}
+# Load necessary libraries
+library(caret)
+library(glmnet)
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Select relevant quantitative variables
+quantitative_vars <- c( "barrel_batted_rate","launch_angle_avg","pa",  "exit_velocity_avg", "z_swing_percent","oz_contact_percent","hard_hit_percent","z_swing_miss_percent", "meatball_percent", "edge_percent","zone_swing_ratio" , "oz_swing_percent")
+
+# Create a data frame with selected variables
+selected_data <- final_data[, c(quantitative_vars, "HR_rate")]
+
+# Define the control for cross-validation
+ctrl <- trainControl(method = "cv", number = 10, verboseIter = TRUE)
+
+# Fit the model using cv.glmnet (assuming you want to use LASSO regression)
+lasso_model <- train(
+  HR_rate ~ ., 
+  data = selected_data,
+  method = "glmnet",
+  trControl = ctrl
+)
+# Display the results
+lasso_model
+
+# Extract optimal alpha and lambda values
+optimal_alpha <- lasso_model$bestTune$alpha
+optimal_lambda <- lasso_model$bestTune$lambda
+
+cat("Optimal alpha:", optimal_alpha, "\n")
+cat("Optimal lambda:", optimal_lambda, "\n")
+
+
+
+```
+
+
+```{r}
+final_model <- train(
+  HR_rate ~ .,
+  data = train_data,
+  method = "glmnet",
+  trControl = ctrl,
+  tuneGrid = expand.grid(alpha = optimal_alpha, lambda = optimal_lambda)
+)
+
+predictions <- predict(final_model, newdata = test_data)
+
+new_predictions <- predict(final_model, newdata = test_data)
+
+final_model
+
+```
+
+
+
+```{r}
+library(rpart)
+
+tree_model <- rpart(HR_rate ~ ., data = train_data, method = "anova")
+library(randomForest)
+rf_model <- randomForest(HR_rate ~ ., data = train_data, method = "anova")
+plot(rf_model)
+varImpPlot(rf_model)
+
+# Plot the tree (optional)
+plot(tree_model)
+text(tree_model, cex = 0.7)
+
+# Print the summary of the tree
+summary(tree_model)
+```
+
+```{r}
+c( "barrel_batted_rate","launch_angle_avg","pa",  "exit_velocity_avg", "z_swing_percent",
+  "hard_hit_percent", "edge_percent")
+
+model11 <- lm(HR_rate ~  barrel_batted_rate + launch_angle_avg +exit_velocity_avg + z_swing_percent + hard_hit_percent , data = train_data)
+
+summary(model11)
+# Make predictions on the test data
+predictions <- predict(model11, test_data)
+
+# Calculate the mean squared error (MSE)
+mse <- mean((predictions - test_data$HR_rate)^2)
+
+# Print the MSE
+print(mse)
+
+
+```
+
